@@ -197,6 +197,78 @@ async def test_async_chat_openai_streaming() -> None:
 
 @pytest.mark.scheduled
 @pytest.mark.asyncio
+async def test_async_chat_openai_streaming_with_index() -> None:
+    """Test that streaming correctly invokes on_llm_new_token callback with index."""
+    from typing import Set
+
+    from langchain.callbacks.base import BaseCallbackHandler
+    from langchain.chains import LLMChain
+
+    class Capture:
+        _run_ids: Set[str] = set()
+
+        def __init__(self) -> None:
+            self._captured_tokens: List[str] = []
+            self._captured_chunks: List[
+                Optional[Union[ChatGenerationChunk, GenerationChunk]]
+            ] = []
+
+    class MyCustomAsyncHandler(BaseCallbackHandler):
+        def __init__(self) -> None:
+            super().__init__()
+            self._captures = [Capture(), Capture()]
+
+        def on_llm_new_token(
+            self,
+            token: str,
+            *,
+            chunk: Optional[Union[ChatGenerationChunk, GenerationChunk]] = None,
+            **kwargs: Any,
+        ) -> Any:
+            run_id = kwargs.get("run_id", "")
+            Capture._run_ids.add(run_id)
+            index = kwargs.get("index", 0)
+            capture = self._captures[index]
+            capture._captured_tokens.append(token)
+            capture._captured_chunks.append(chunk)
+
+    callback_handler = MyCustomAsyncHandler()
+    chat = ChatOpenAI(
+        max_tokens=40,
+        streaming=True,
+        temperature=0,
+        verbose=True,
+    )
+    message = HumanMessage(
+        content=f"Output the numbers from 1 to 20, one line at a time."
+    )
+    prompt = ChatPromptTemplate.from_messages([message])
+    chain = LLMChain(llm=chat, llm_kwargs=dict(n=2), prompt=prompt)
+    mixed_text = await chain.arun({}, callbacks=[callback_handler])
+    assert isinstance(mixed_text, str)
+
+    # run_id cannot distinguish between two token sequences since there is only one run_id.
+    assert len(Capture._run_ids) == 1
+
+    # If mixed_text is an asynchronous mixture of two captured token sequences, then...
+    # (1) each captured token sequence is not directly contained in mixed_text,
+    # (2) each captured token should have a one-to-one correspondence with the character in mixed_text.
+    assert len(callback_handler._captures) == 2
+    all_captured_tokens: List[str] = []
+    for capture in callback_handler._captures:
+        assert len(capture._captured_tokens) > 0
+        assert len(capture._captured_chunks) > 0
+        assert all([chunk is not None for chunk in capture._captured_chunks])
+        captured_text = "".join(capture._captured_tokens)
+        assert len(captured_text) < len(mixed_text)
+        assert captured_text not in mixed_text  # (1)
+        all_captured_tokens.extend([c for c in captured_text.strip()])
+    mixed_tokens = [c for c in mixed_text.strip()]
+    assert sorted(all_captured_tokens) == sorted(mixed_tokens)  # (2)
+
+
+@pytest.mark.scheduled
+@pytest.mark.asyncio
 async def test_async_chat_openai_streaming_with_function() -> None:
     """Test ChatOpenAI wrapper with multiple completions."""
 
