@@ -317,6 +317,7 @@ class ChatOpenAI(BaseChatModel):
             chunk = _convert_delta_to_message_chunk(
                 choice["delta"], default_chunk_class
             )
+            index = choice["index"]
             finish_reason = choice.get("finish_reason")
             generation_info = (
                 dict(finish_reason=finish_reason) if finish_reason is not None else None
@@ -324,7 +325,7 @@ class ChatOpenAI(BaseChatModel):
             default_chunk_class = chunk.__class__
             yield ChatGenerationChunk(message=chunk, generation_info=generation_info)
             if run_manager:
-                run_manager.on_llm_new_token(chunk.content, chunk=chunk)
+                run_manager.on_llm_new_token(chunk.content, chunk=chunk, index=index)
 
     def _generate(
         self,
@@ -391,6 +392,7 @@ class ChatOpenAI(BaseChatModel):
             chunk = _convert_delta_to_message_chunk(
                 choice["delta"], default_chunk_class
             )
+            index = choice["index"]
             finish_reason = choice.get("finish_reason")
             generation_info = (
                 dict(finish_reason=finish_reason) if finish_reason is not None else None
@@ -398,7 +400,9 @@ class ChatOpenAI(BaseChatModel):
             default_chunk_class = chunk.__class__
             yield ChatGenerationChunk(message=chunk, generation_info=generation_info)
             if run_manager:
-                await run_manager.on_llm_new_token(token=chunk.content, chunk=chunk)
+                await run_manager.on_llm_new_token(
+                    token=chunk.content, chunk=chunk, index=index
+                )
 
     async def _agenerate(
         self,
